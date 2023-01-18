@@ -1,0 +1,69 @@
+import asyncio
+import socket
+import aiohttp
+import logging
+import threading
+
+servers = [
+    {"name": "server1", "url": "http://server1.com/availability"},
+    {"name": "server2", "url": "http://server2.com/availability"},
+    {"name": "server3", "url": "http://server3.com/availability"}
+]
+
+# This function is used to fetch the availability of all servers
+def fetch_all_availability():
+    availabilities = {}
+    for server in servers:
+        try:
+            # Send a GET request to the server's availability URL
+            response = requests.get(server["url"])
+            availability = int(response.text)
+            # check if availability is between 0 and 100
+            if 0 <= availability <= 100:
+                availabilities[server["name"]] = availability
+            else:
+                raise ValueError
+        except Exception as e:
+            logging.error(f"Error fetching availability for {server['name']}: {e}")
+            availabilities[server["name"]] = 0
+    return availabilities
+
+# This coroutine is used to handle a request for a specific server
+async def handle_server(server_name, conn):
+    try:
+        availability = fetch_all_availability().get(server_name, 0)
+    except Exception as e:
+        logging.error(f"Error handling request for {server_name}: {e}")
+        availability = 0
+
+    # Send the availability back to HAProxy Enterprise
+    print(f"Sending availability {availability} for {server_name}")
+    conn.sendall(f"{availability}\n".encode())
+    conn.close()
+
+def handle_connection(conn):
+    data = conn.recv(1024).decode()
+    # Split the data to extract the server name
+    server_name = data.split("-")[-1].strip()
+    print(f"Received request for {server_name}")
+    asyncio.run(handle_server(server_name, conn))
+
+async def main():
+    # Configure logging
+    logging.basicConfig(filename='/var/log/hapee-agent-check-dyn-weight_error.log', level=logging.ERROR)
+
+    # Create a socket to listen for HAProxy Enterprise on port 8080
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("localhost", 8080))
+    s.listen(5)
+
+    while True:
+        try:
+            # Accept incoming connections from HAProxy Enterprise
+            (conn, address) = s
+            threading.Thread(target=handle_connection, args=(conn,)).start()
+        except Exception as e:
+            logging.error(f"Error accepting connection: {e}")
+
+if __name__ == "__main__":
+    asyncio.run(main())

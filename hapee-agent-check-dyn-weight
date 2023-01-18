@@ -60,7 +60,7 @@ async def main():
     while True:
         try:
             # Accept incoming connections from HAProxy Enterprise
-            (conn, address) = s
+            conn, address = s.accept()
             threading.Thread(target=handle_connection, args=(conn,)).start()
         except Exception as e:
             logging.error(f"Error accepting connection: {e}")

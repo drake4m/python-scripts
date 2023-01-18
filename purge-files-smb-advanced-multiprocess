@@ -54,12 +54,16 @@ def delete_oldest_files(smb_path):
     files_list = []
     # Recursively traverse the folder
     with ProcessPoolExecutor() as executor:
+        # Use memoization to store results of computation
+        memo = {}
         for root, dirs, files in os.walk(smb_path):
             for file in files:
                 file_path = os.path.join(root, file)
-                # Get the last modified time of the file in seconds
-                last_modified = os.path.getmtime(file_path)
-                files_list.append((file_path, last_modified))
+                if file_path not in memo:
+                    # Get the last modified time of the file in seconds
+                    last_modified = os.path.getmtime(file_path)
+                    files_list.append((file_path, last_modified))
+                    memo[file_path] = last_modified
         files_list.sort(key=lambda x: x[1])
         for file in files_list:
             executor.submit(process_file, file[0])

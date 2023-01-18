@@ -48,26 +48,7 @@ if disk_usage_percent > 90:
                 executor.submit(process_file, file_path)
     # Get the new disk usage percentage
     disk_usage_percent = (shutil.disk_usage(smb_path).used/shutil.disk_usage(smb_path).total)*100
-    # While the disk usage is above 60%
-    while disk_usage_percent > 60:
-        files_list = []
-        # Recursively traverse the folder
-        with ThreadPoolExecutor() as executor:
-            for root, dirs, files in os.walk(smb_path):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    # Get the last modified time of the file in seconds
-                    last_modified = os.path.getmtime(file_path)
-                    files_list.append((file_path, last_modified))
-            files_list.sort(key=lambda x: x[1])
-    # Recursively traverse the folder
-    with ThreadPoolExecutor() as executor:
-        for root, dirs, files in os.walk(smb_path):
-            for file in files:
-                file_path = os.path.join(root, file)
-                executor.submit(process_file, file_path)
-    # Get the new disk usage percentage
-    disk_usage_percent = (shutil.disk_usage(smb_path).used/shutil.disk_usage(smb_path).total)*100
+
     # While the disk usage is above 60%
     while disk_usage_percent > 60:
         files_list = []

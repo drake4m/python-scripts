@@ -2,61 +2,46 @@ import os
 import time
 import shutil
 from concurrent.futures import ProcessPoolExecutor
+import logging
 
 # Define the path to the smb mount folder
 smb_path = "/"
 
-if os.path.exists(smb_path):
-    disk_usage = shutil.disk_usage(smb_path)
-    used = disk_usage.used
-    total = disk_usage.total
-    percent = (used / total) * 100
-    print("Disk usage percentage: ", percent)
-else:
-    print("The directory does not exist.")
+# Define the threshold for disk usage
+threshold = 90
 
-# Create lists to store deleted and error files
-deleted_files = []
-error_files = []
+# Configure logging
+logging.basicConfig(filename='file_deletion.log', level=logging.INFO,
+                    format='%(asctime)s %(levelname)s: %(message)s')
 
 def process_file(file_path):
     try:
         # Delete the file
         os.remove(file_path)
-        deleted_files.append(file_path)
+        logging.info(f'Deleted file: {file_path}')
     except Exception as e:
-        error_files.append(file_path)
-        print(f"Error deleting file {file_path}: {e}")
+        logging.error(f"Error deleting file {file_path}: {e}")
 
-# Get the disk usage percentage
-disk_usage_percent = (shutil.disk_usage(smb_path).used/shutil.disk_usage(smb_path).total)*100
+while True:
+    # Get the current disk usage percentage
+    disk_usage_percent = (shutil.disk_usage(smb_path).used / shutil.disk_usage(smb_path).total) * 100
 
-# Check if the disk usage is above 90%
-if disk_usage_percent > 90:
-    files_list = []
-    # Recursively traverse the folder
-    for root, dirs, files in os.walk(smb_path):
-        for file in files:
-            file_path = os.path.join(root, file)
-            # Get the last modified time of the file in seconds
-            last_modified = os.path.getmtime(file_path)
-            files_list.append((file_path, last_modified))
-    files_list.sort(key=lambda x: x[1])
-    with ProcessPoolExecutor() as executor:
-        for file in files_list:
-            executor.submit(process_file, file[0])
-            deleted_files.append(file_path)
-            disk_usage_percent = (shutil.disk_usage(smb_path).used/shutil.disk_usage(smb_path).total)*100
-            if disk_usage_percent <= 60:
-                break
+    # Check if the disk usage is above the threshold
+    if disk_usage_percent > threshold:
+        files_list = []
+        # Recursively traverse the folder
+        for root, dirs, files in os.walk(smb_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                # Get the last modified time of the file in seconds
+                last_modified = os.path.getmtime(file_path)
+                files_list.append((file_path, last_modified))
+        files_list.sort(key=lambda x: x[1])
+        with ProcessPoolExecutor() as executor:
+            for file in files_list:
+                executor.submit(process_file, file[0])
+                disk_usage_percent = (shutil.disk_usage(smb_path).used / shutil.disk_usage(smb_path).total) * 100
+                if disk_usage_percent <= threshold:
+                    break
 
-
-# Log the deleted files to the deleted_files.log file
-with open("deleted_files.log", "w") as log_file:
-    for file in deleted_files:
-        log_file.write(file + "\n")
-
-# Log the error files to the error_files.log file
-with open("error_files.log", "w") as log_file:
-    for file in error_files:
-        log_file.write(file + "\n")
+    time.sleep(60)  # sleep for 60 seconds before checking the disk usage again

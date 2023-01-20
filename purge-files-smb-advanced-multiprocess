@@ -14,6 +14,19 @@ threshold = 90
 logging.basicConfig(filename='file_deletion.log', level=logging.INFO,
                     format='%(asctime)s %(levelname)s: %(message)s')
 
+def delete_old_files(max_age_days):
+    current_time = time.time()
+    for root, dirs, files in os.walk(smb_path):
+        for file in files:
+            file_path = os.path.join(root, file)
+            file_age = current_time - os.path.getmtime(file_path)
+            if file_age > max_age_days * 24 * 60 * 60:
+                try:
+                    os.remove(file_path)
+                    logging.info(f'Deleted old file: {file_path}')
+                except Exception as e:
+                    logging.error(f"Error deleting old file {file_path}: {e}")
+
 def process_file(file_path):
     try:
         # Delete the file
@@ -23,6 +36,9 @@ def process_file(file_path):
         logging.error(f"Error deleting file {file_path}: {e}")
 
 while True:
+    # Delete old files
+    delete_old_files(1)
+
     # Get the current disk usage percentage
     disk_usage_percent = (shutil.disk_usage(smb_path).used / shutil.disk_usage(smb_path).total) * 100
 
@@ -43,5 +59,4 @@ while True:
                 disk_usage_percent = (shutil.disk_usage(smb_path).used / shutil.disk_usage(smb_path).total) * 100
                 if disk_usage_percent <= threshold:
                     break
-
-    time.sleep(60)  # sleep for 60 seconds before checking the disk usage again
+    time.sleep(60)  # sleep for 60 seconds before checking the disk usage

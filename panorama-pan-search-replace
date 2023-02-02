@@ -1,0 +1,59 @@
+import paramiko
+import time
+
+def panorama_connection(username, password, hostname):
+    # Establishing the connection
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(hostname, username=username, password=password)
+
+    # Starting a shell session on the remote device
+    channel = ssh.invoke_shell()
+    time.sleep(1)
+
+    # Clearing the initial output
+    output = channel.recv(9999).decode("utf-8")
+
+    # Entering Configuration Mode
+    channel.send("configure\n")
+    time.sleep(1)
+    output = channel.recv(9999).decode("utf-8")
+
+    return channel
+
+def add_or_replace_ip_address(channel, option, object_name, ip_address):
+    if option == 1:
+        # Find and replace IP address
+        channel.send(f"set address {object_name} ip-address {ip_address}\n")
+        time.sleep(1)
+        output = channel.recv(9999).decode("utf-8")
+        print(output)
+    elif option == 2:
+        # Add new IP address
+        channel.send(f"set address {object_name} ip-address {ip_address}\n")
+        time.sleep(1)
+        output = channel.recv(9999).decode("utf-8")
+        if "does not exist" in output:
+            # Create new IP object
+            channel.send(f"set address {object_name} ip-address {ip_address}\n")
+            time.sleep(1)
+            output = channel.recv(9999).decode("utf-8")
+            print(output)
+        else:
+            print(output)
+
+def main():
+    username = input("Enter username: ")
+    password = input("Enter password: ")
+    hostname = input("Enter hostname/IP address: ")
+
+    channel = panorama_connection(username, password, hostname)
+
+    option = int(input("Enter 1 for Find and Replace IP address or 2 for Add new IP address: "))
+    object_name = input("Enter object name: ")
+    ip_address = input("Enter IP address: ")
+
+    add_or_replace_ip_address(channel, option, object_name, ip_address)
+
+if __name__ == "__main__":
+    main()

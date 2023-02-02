@@ -21,26 +21,33 @@ def panorama_connection(username, password, hostname):
 
     return channel
 
-def add_or_replace_ip_address(channel, option, object_name, ip_address):
-    if option == 1:
-        # Find and replace IP address
-        channel.send(f"set address {object_name} ip-address {ip_address}\n")
+def add_or_replace_ip_address(channel, device_group, old_ip, new_ip):
+    # Search for the old IP address
+    channel.send(f"show device-group {device_group} | match {old_ip}\n")
+    time.sleep(1)
+    output = channel.recv(9999).decode("utf-8")
+    object_list = output.split("\n")
+
+    # Check if the new IP address object exists
+    channel.send(f"show object address all filter value {new_ip}\n")
+    time.sleep(1)
+    output = channel.recv(9999).decode("utf-8")
+    if "No matching objects found." in output:
+        # Create the new IP address object
+        channel.send(f"set address {new_ip} ip-address {new_ip}\n")
         time.sleep(1)
         output = channel.recv(9999).decode("utf-8")
-        print(output)
-    elif option == 2:
-        # Add new IP address
-        channel.send(f"set address {object_name} ip-address {ip_address}\n")
-        time.sleep(1)
-        output = channel.recv(9999).decode("utf-8")
-        if "does not exist" in output:
-            # Create new IP object
-            channel.send(f"set address {object_name} ip-address {ip_address}\n")
+        print(f"Successfully created new IP address object: {new_ip}")
+
+    # Loop through the objects that use the old IP address
+    for obj in object_list:
+        if obj.startswith("address"):
+            obj_name = obj.split()[1]
+            # Replace the old IP address with the new IP address
+            channel.send(f"set device-group {device_group} address {obj_name} ip-address {new_ip}\n")
             time.sleep(1)
             output = channel.recv(9999).decode("utf-8")
-            print(output)
-        else:
-            print(output)
+            print(f"Successfully replaced {old_ip} with {new_ip} in {obj_name}")
 
 def main():
     username = input("Enter username: ")
@@ -49,11 +56,11 @@ def main():
 
     channel = panorama_connection(username, password, hostname)
 
-    option = int(input("Enter 1 for Find and Replace IP address or 2 for Add new IP address: "))
-    object_name = input("Enter object name: ")
-    ip_address = input("Enter IP address: ")
+    device_group = input("Enter device group: ")
+    old_ip = input("Enter old IP address: ")
+    new_ip = input("Enter new IP address: ")
 
-    add_or_replace_ip_address(channel, option, object_name, ip_address)
+    add_or_replace_ip_address(channel, device_group, old_ip, new_ip)
 
-if __name__ == "__main__":
-    main()
+if name == "main":
+main()

@@ -1,0 +1,66 @@
+import paramiko
+import time
+
+def panorama_connection(username, password, hostname):
+    # Establishing the connection
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(hostname, username=username, password=password)
+
+    # Starting a shell session on the remote device
+    channel = ssh.invoke_shell()
+    time.sleep(1)
+
+    # Clearing the initial output
+    output = channel.recv(9999).decode("utf-8")
+
+    # Entering Configuration Mode
+    channel.send("configure\n")
+    time.sleep(1)
+    output = channel.recv(9999).decode("utf-8")
+
+    return channel
+
+def add_new_ip_address(channel, device_group, old_ip, new_ip):
+    # Search for the old IP address
+    channel.send(f"show device-group {device_group} policy rules all | match {old_ip}\n")
+    time.sleep(1)
+    output = channel.recv(9999).decode("utf-8")
+    object_list = output.split("\n")
+
+    # Check if the new IP address object exists
+    channel.send(f"show object address all filter value {new_ip}\n")
+    time.sleep(1)
+    output = channel.recv(9999).decode("utf-8")
+    if "No matching objects found." in output:
+        # Create the new IP address object
+        channel.send(f"set address {new_ip} ip-address {new_ip}\n")
+        time.sleep(1)
+        output = channel.recv(9999).decode("utf-8")
+        print(f"Successfully created new IP address object: {new_ip}")
+
+    # Loop through the rules that use the old IP address
+    for obj in object_list:
+        if obj.startswith("rule"):
+            rule_number = obj.split()[1].split("-")[1]
+            # Add the new IP address to the rule
+            channel.send(f"set device-group {device_group} policy rule {rule_number} source {new_ip}\n")
+            time.sleep(1)
+            output = channel.recv(9999).decode("utf-8")
+            print(f"Successfully added {new_ip} to rule {rule_number}")
+
+def main():
+    username = input("Enter username: ")
+    password = input("Enter password: ")
+    hostname = input("Enter hostname/IP address: ")
+
+    channel = panorama_connection(username, password, hostname)
+
+    device_group = input("Enter device group: ")
+    old_ip = input("Enter old IP address: ")
+    new_ip = input("Enter new IP address: ")
+
+    add_new_ip_address(channel, device_group, old_ip, new_ip)
+
+if __name__ == "__main__":
+    main()

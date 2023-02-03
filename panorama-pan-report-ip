@@ -1,66 +1,107 @@
-import paramiko
-import time
+# Import the required libraries
+import pan.xapi
+import csv
 
-def panorama_connection(username, password, hostname):
-    # Establishing the connection
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(hostname, username=username, password=password)
+# Prompt the user to enter the Panorama IP address, username and password
+panorama_ip = input("Enter the IP address of the Panorama: ")
+username = input("Enter the username: ")
+password = input("Enter the password: ")
 
-    # Starting a shell session on the remote device
-    channel = ssh.invoke_shell()
-    time.sleep(1)
+# Connect to the Panorama using the provided credentials
+try:
+    conn = pan.xapi.PanXapi(api_username=username, api_password=password, hostname=panorama_ip)
+    print("Successfully entered credentials to the Panorama")
+except:
+    print("Failed to connect to the Panorama")
+    exit()
+# Check if connection was successful
 
-    # Clearing the initial output
-    output = channel.recv(9999).decode("utf-8")
+if conn is None:
+    print("Failed to connect to the Panorama")
+    exit()
 
-    # Entering Configuration Mode
-    channel.send("configure\n")
-    time.sleep(1)
-    output = channel.recv(9999).decode("utf-8")
+check_conn = conn.op("show system info", cmd="<show><system><info></info></system></show>")
+if check_conn is None:
+    print("Failed to connect to the Panorama")
+    exit()
+else:
+    print("Successfully connected to the Panorama")
+ 
 
-    return channel
+# Get a list of all device groups
+try:
+    result = conn.op("show device-group", xpath="/config/devices/entry/device-group")
+    device_groups = [device_group.text for device_group in result.findall("entry/device-group")]
+    print("Successfully retrieved the list of device groups")
+except:
+    print("Failed to retrieve the list of device groups")
+    exit()
 
-def add_new_ip_address(channel, device_group, old_ip, new_ip):
-    # Search for the old IP address
-    channel.send(f"show device-group {device_group} policy rules all | match {old_ip}\n")
-    time.sleep(1)
-    output = channel.recv(9999).decode("utf-8")
-    object_list = output.split("\n")
+# Read the current IP addresses and new IP addresses from the csv file
+try:
+    with open("ip_list.csv", "r") as f:
+        reader = csv.reader(f)
+        ip_list = [row for row in reader]
+    print("Successfully read the IP addresses from the csv file")
+except:
+    print("Failed to read the IP addresses from the csv file")
+    exit()
 
-    # Check if the new IP address object exists
-    channel.send(f"show object address all filter value {new_ip}\n")
-    time.sleep(1)
-    output = channel.recv(9999).decode("utf-8")
-    if "No matching objects found." in output:
-        # Create the new IP address object
-        channel.send(f"set address {new_ip} ip-address {new_ip}\n")
-        time.sleep(1)
-        output = channel.recv(9999).decode("utf-8")
-        print(f"Successfully created new IP address object: {new_ip}")
+# Create a list to store the log of changes made
+log = []
 
-    # Loop through the rules that use the old IP address
-    for obj in object_list:
-        if obj.startswith("rule"):
-            rule_number = obj.split()[1].split("-")[1]
-            # Add the new IP address to the rule
-            channel.send(f"set device-group {device_group} policy rule {rule_number} source {new_ip}\n")
-            time.sleep(1)
-            output = channel.recv(9999).decode("utf-8")
-            print(f"Successfully added {new_ip} to rule {rule_number}")
+for device_group in device_groups:
+    print(f"Processing rules in the {device_group} device group")
 
-def main():
-    username = input("Enter username: ")
-    password = input("Enter password: ")
-    hostname = input("Enter hostname/IP address: ")
+    # Enter the device group configuration mode
+    conn.op("set device-group device " + device_group, cmd="<enter><device-group>" + device_group + "</device-group>")
 
-    channel = panorama_connection(username, password, hostname)
+    # Loop through each IP address in the csv file
+    for current_object, new_object in ip_list:
 
-    device_group = input("Enter device group: ")
-    old_ip = input("Enter old IP address: ")
-    new_ip = input("Enter new IP address: ")
+        # Search for rules that contain the current IP address
+        try:
+            xpath = f"/config/devices/entry/device-group[@name='{device_group}']/pre-rulebase/security/rules/entry[source/member='{current_object}' or destination/member='{current_object}']"
+            result = conn.op("show rules", xpath=xpath)
+            entries = result.findall("entry")
+        except:
+            print(f"Failed to search for rules that contain the current object {current_object}")
+            continue
 
-    add_new_ip_address(channel, device_group, old_ip, new_ip)
+        # Loop through each rule that contains the current IP address
+        for entry in entries:
+            rule_id = entry.attrib["name"]
+            source = entry.find("source/member").text
+            destination = entry.find("destination/member").text
+            update = False
 
-if __name__ == "__main__":
-    main()
+            # Check if the current IP address is in the source
+            if source == current_object:
+                entry.find("source/member").text = new_object
+                update = True
+
+            # Check if the current IP address is in the destination
+            if destination == current_object:
+                entry.find("destination/member").text = new_object
+                update = True
+                
+            if update:
+                try:
+                    conn.edit_config(entry)
+                    log.append(f"Successfully updated rule {rule_id} in {device_group} to replace {current_object} with {new_object}")
+                except:
+                    log.append(f"Failed to update rule {rule_id} in {device_group}")
+
+    conn.op("exit", cmd="<exit>")
+
+try:
+    with open("log.txt", "w") as f:
+        for entry in log:
+            f.write(entry + "\n")
+        print("Successfully wrote the log to the log.txt file")
+except:
+    print("Failed to write the log to the log.txt file")
+    exit()
+conn.close()
+
+print("Script execution completed")

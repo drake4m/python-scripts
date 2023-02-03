@@ -1,0 +1,102 @@
+import csv
+import pan.xapi
+import progressbar
+
+
+def add_new_objects(username, password, address, filename):
+    try:
+        # Connect to the Palo Alto Panorama
+        pano = pan.xapi.PanXapi(
+            hostname=address, api_username=username, api_password=password
+        )
+
+        # Read the objects from the CSV file
+        with open(filename, "r") as csvfile:
+            reader = csv.reader(csvfile)
+
+            # Create a progress bar for the operation
+            # Create a progress bar for the operation
+            bar = progressbar.ProgressBar()
+            i = 0
+
+            for row in reader:
+                current_object = row[0]
+                new_object = row[1]
+
+                # Check if the current object exists
+                current_object_check = pano.op(
+                    cmd="<show><object><type>ip-netmask</type><name>{}</name></object></show>".format(
+                        current_object
+                    )
+                )
+
+                if "No such object" in current_object_check:
+                    # If the current object does not exist, skip the line
+                    print(
+                        "Current object '{}' does not exist. Skipping line.".format(
+                            current_object
+                        )
+                    )
+                else:
+                    # Get the device-group of the current object
+                    current_device_group = current_object_check.xpath(
+                        ".//device-group"
+                    )[0].text
+
+                    # Check if the new object already exists
+                    new_object_check = pano.op(
+                        cmd="<show><object><type>ip-netmask</type><name>{}</name></object></show>".format(
+                            new_object
+                        )
+                    )
+
+                    if "No such object" in new_object_check:
+                        # If the new object does not exist, create it in the same device-group as the current object
+                        pano.op(
+                            cmd="<add><object><type>ip-netmask</type><name>{}</name><device-group>{}</device-group></object></add>".format(
+                                new_object, current_device_group
+                            )
+                        )
+
+                        print(
+                            "New object '{}' created in device-group '{}'.".format(
+                                new_object, current_device_group
+                            )
+                        )
+                    else:
+                        # If the new object already exists, skip it
+                        print(
+                            "New object '{}' already exists. Skipping.".format(
+                                new_object
+                            )
+                        )
+
+                # Update the progress bar
+                i += 1
+                bar.update(i)
+
+        # Commit all changes
+        pano.commit(cmd="<commit></commit>")
+
+    except Exception as e:
+        print("An error occurred: {}".format(str(e)))
+
+
+def main():
+    try:
+        # Ask for credentials and address
+        username = input("Enter your username: ")
+        password = input("Enter your password: ")
+        address = input("Enter the address of your Palo Alto Panorama: ")
+        filename = input(
+            "Enter the name of your objects csv file (including .csv extension): "
+        )
+
+        add_new_objects(username, password, address, filename)
+
+    except Exception as e:
+        print("An error occurred: {}".format(str(e)))
+
+
+if __name__ == "__main__":
+    main()
